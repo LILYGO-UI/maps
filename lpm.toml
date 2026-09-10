@@ -1,0 +1,55 @@
+schema_version = 1
+
+[project]
+package = "lilygo-ui-maps"
+version = "0.1.0"
+app_id = "cc.lilygo.ui.Maps"
+title = "Maps"
+summary = "Browse and search online maps with an on-device tile cache"
+description = "An interactive OpenStreetMap viewer with IP-based startup location, address search, responsive pan and zoom controls, and a removable on-device tile cache."
+license = "MIT"
+source_repo = "https://github.com/LILYGO-UI/lilygo-ui-maps"
+homepage = "https://github.com/LILYGO-UI/lilygo-ui-maps"
+categories = ["Utilities"]
+
+[[project.authors]]
+name = "lbuque"
+email = "110239031@qq.com"
+
+[project.assets]
+icon = "assets/maps-icon.png"
+
+[[project.assets.screenshots]]
+path = "assets/previews/maps.png"
+caption = "Online map centered from the current IP location"
+
+[[project.assets.screenshots]]
+path = "assets/previews/maps-search.png"
+caption = "Address search result for Shanghai Pudong"
+
+[[project.permissions]]
+id = "network"
+reason = "Access online application data"
+
+[[project.permissions]]
+id = "filesystem"
+access = "read-write"
+scope = "app-data"
+reason = "Cache downloaded map tiles for offline reuse"
+
+[project.compatibility]
+architectures = ["arm64"]
+min_appkit_version = "0.1.0"
+
+[project.launcher]
+order = 90
+
+[build]
+host_preset = "host-simulator"
+cross_preset = "cm0-cross"
+package_dir = "dist"
+
+[deploy]
+host = "raspberrypi.local"
+user = "pi"
+port = 22
