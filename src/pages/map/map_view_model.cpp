@@ -29,7 +29,8 @@ std::string tile_key(const TileId &tile)
 
 }  // namespace
 
-MapViewModel::MapViewModel(std::filesystem::path cache_root) : service_(std::move(cache_root))
+MapViewModel::MapViewModel(std::filesystem::path cache_root, GnssFixProvider gnss_provider)
+    : service_(std::move(cache_root), std::move(gnss_provider))
 {
     publish_cache(service_.cache_stats());
 }
@@ -42,20 +43,34 @@ void MapViewModel::start()
 void MapViewModel::locate()
 {
     active_search_id_ = 0;
-    accept_ip_location_ = true;
+    follow_location_ = true;
+    displayed_location_source_.reset();
     status_.set("Finding your current location...");
-    service_.locate_by_ip();
+    service_.locate();
 }
 
-void MapViewModel::return_to_ip_location()
+void MapViewModel::return_to_location()
 {
+    active_search_id_ = 0;
+    follow_location_ = true;
+    if (const auto fix = service_.current_gnss_fix()) {
+        show_gnss_location(fix->point, true);
+        return;
+    }
+    if (const auto cached = service_.cached_ip_location()) {
+        ip_location_ = cached->point;
+        ip_location_label_ = cached->label;
+    }
     if (!ip_location_) {
         locate();
         return;
     }
-    active_search_id_ = 0;
-    accept_ip_location_ = false;
     show_ip_location();
+}
+
+void MapViewModel::return_to_ip_location()
+{
+    return_to_location();
 }
 
 void MapViewModel::search(std::string query)
@@ -66,7 +81,7 @@ void MapViewModel::search(std::string query)
         status_.set("Enter an address to search");
         return;
     }
-    accept_ip_location_ = false;
+    follow_location_ = false;
     status_.set("Searching for address...");
     active_search_id_ = service_.search(std::move(query));
 }
@@ -79,14 +94,14 @@ void MapViewModel::clear_cache()
 
 void MapViewModel::pan_pixels(double horizontal, double vertical)
 {
-    accept_ip_location_ = false;
+    follow_location_ = false;
     map_ready_ = true;
     model_.pan_pixels(horizontal, vertical);
 }
 
 void MapViewModel::zoom_in()
 {
-    accept_ip_location_ = false;
+    follow_location_ = false;
     map_ready_ = true;
     model_.zoom_in();
     publish_zoom();
@@ -94,7 +109,7 @@ void MapViewModel::zoom_in()
 
 void MapViewModel::zoom_out()
 {
-    accept_ip_location_ = false;
+    follow_location_ = false;
     map_ready_ = true;
     model_.zoom_out();
     publish_zoom();
@@ -108,9 +123,16 @@ bool MapViewModel::poll(MapPresentationEvent &presentation)
 
     switch (event.kind) {
         case MapServiceEventKind::LocationReady:
+            if (event.location_source == LocationSource::Gnss) {
+                if (follow_location_ &&
+                    show_gnss_location(event.point, displayed_location_source_ != LocationSource::Gnss)) {
+                    presentation.kind = MapPresentationEventKind::ViewportChanged;
+                }
+                return true;
+            }
             ip_location_ = event.point;
             ip_location_label_ = std::move(event.label);
-            if (!accept_ip_location_) return true;
+            if (!follow_location_ || service_.current_gnss_fix()) return true;
             show_ip_location();
             presentation.kind = MapPresentationEventKind::ViewportChanged;
             return true;
@@ -119,6 +141,7 @@ bool MapViewModel::poll(MapPresentationEvent &presentation)
             active_search_id_ = 0;
             model_.center_on(event.point, 14);
             map_ready_ = true;
+            displayed_location_source_.reset();
             location_.set(event.label);
             status_.set("Address found");
             publish_zoom();
@@ -140,9 +163,9 @@ bool MapViewModel::poll(MapPresentationEvent &presentation)
             publish_cache(event.cache);
             return true;
         case MapServiceEventKind::LocationError:
-            if (!accept_ip_location_) return true;
-            status_.set(map_ready_ ? "Could not locate this IP. Keeping the current map."
-                                   : "Could not locate this IP. Showing the world map.");
+            if (!follow_location_ || service_.current_gnss_fix()) return true;
+            status_.set(map_ready_ ? "Could not determine your location. Keeping the current map."
+                                   : "Could not determine your location. Showing the world map.");
             map_ready_ = true;
             presentation.kind = MapPresentationEventKind::ViewportChanged;
             return true;
@@ -242,7 +265,27 @@ void MapViewModel::show_ip_location()
 {
     model_.center_on(*ip_location_, 11);
     map_ready_ = true;
+    displayed_location_source_ = LocationSource::Ip;
     location_.set(ip_location_label_);
-    status_.set("Showing your current IP location");
+    status_.set("Showing approximate IP location");
     publish_zoom();
+}
+
+bool MapViewModel::show_gnss_location(GeoPoint point, bool reset_zoom)
+{
+    const auto previous = model_.center();
+    const int target_zoom = reset_zoom ? 16 : model_.zoom();
+    const int previous_zoom = model_.zoom();
+    model_.center_on(point, target_zoom);
+    const auto current = model_.center();
+    const bool changed = !map_ready_ || previous.latitude != current.latitude ||
+                         previous.longitude != current.longitude || previous_zoom != model_.zoom();
+    map_ready_ = true;
+    displayed_location_source_ = LocationSource::Gnss;
+    std::ostringstream label;
+    label << "GNSS: " << std::fixed << std::setprecision(6) << point.latitude << ", " << point.longitude;
+    location_.set(label.str());
+    status_.set("Showing GNSS location");
+    publish_zoom();
+    return changed;
 }

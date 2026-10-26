@@ -2,6 +2,7 @@
 
 #include "components/components.hpp"
 
+#include <cm0/input.h>
 #include <cm0/typography.h>
 
 #include <algorithm>
@@ -62,7 +63,7 @@ MapView::~MapView() noexcept
     destroy();
 }
 
-lv_obj_t *MapView::create(lv_obj_t *parent, const char *application_name)
+lv_obj_t *MapView::create(lv_obj_t *parent)
 {
     if (!parent) return nullptr;
     destroy();
@@ -71,50 +72,6 @@ lv_obj_t *MapView::create(lv_obj_t *parent, const char *application_name)
     lv_obj_set_name_static(surface_, "map_surface");
     lv_obj_set_style_pad_bottom(surface_, kHomeIndicatorSpace, 0);
     lv_obj_add_event_cb(surface_, size_changed_event, LV_EVENT_SIZE_CHANGED, this);
-
-    header_ = components::create_header(surface_, application_name);
-    auto *cache_button = make_icon_button(header_, LV_SYMBOL_TRASH, "map_cache_button", show_clear_event, this,
-                                          components::color_destructive);
-    lv_obj_align(cache_button, LV_ALIGN_RIGHT_MID, 0, 0);
-
-    search_band_ = lv_obj_create(surface_);
-    lv_obj_set_name_static(search_band_, "map_search_band");
-    lv_obj_set_width(search_band_, LV_PCT(100));
-    lv_obj_set_height(search_band_, 72);
-    make_plain(search_band_, components::color_container_background, LV_OPA_COVER);
-    lv_obj_set_style_border_side(search_band_, LV_BORDER_SIDE_BOTTOM, 0);
-    lv_obj_set_style_border_width(search_band_, 1, 0);
-    lv_obj_set_style_border_color(search_band_, lv_color_hex(components::color_border), 0);
-    lv_obj_set_style_pad_hor(search_band_, 16, 0);
-    lv_obj_set_style_pad_ver(search_band_, 9, 0);
-
-    search_inner_ = lv_obj_create(search_band_);
-    lv_obj_set_height(search_inner_, 52);
-    make_plain(search_inner_);
-    lv_obj_set_style_pad_column(search_inner_, 8, 0);
-    lv_obj_set_flex_flow(search_inner_, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(search_inner_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_center(search_inner_);
-
-    search_input_ = lv_textarea_create(search_inner_);
-    lv_obj_set_name_static(search_input_, "map_search_input");
-    lv_obj_set_height(search_input_, 52);
-    lv_obj_set_flex_grow(search_input_, 1);
-    lv_obj_set_style_radius(search_input_, 6, 0);
-    lv_obj_set_style_border_width(search_input_, 1, 0);
-    lv_obj_set_style_border_color(search_input_, lv_color_hex(components::color_border), 0);
-    lv_obj_set_style_bg_color(search_input_, lv_color_hex(components::color_page_background), 0);
-    lv_obj_set_style_bg_opa(search_input_, LV_OPA_COVER, 0);
-    lv_obj_set_style_text_font(search_input_, lilygo_ui_font_get(22), 0);
-    lv_obj_set_style_text_color(search_input_, lv_color_hex(components::color_text), 0);
-    lv_textarea_set_one_line(search_input_, true);
-    lv_textarea_set_max_length(search_input_, 160);
-    lv_textarea_set_placeholder_text(search_input_, "Search address");
-    lv_obj_add_event_cb(search_input_, search_focus_event, LV_EVENT_FOCUSED, this);
-
-    auto *search_button = make_icon_button(search_inner_, kSearchSymbol, "map_search_button", search_event, this,
-                                           components::color_container_background, components::color_action);
-    lv_obj_set_size(search_button, 58, 52);
 
     map_viewport_ = lv_obj_create(surface_);
     lv_obj_set_name_static(map_viewport_, "map_viewport");
@@ -133,6 +90,42 @@ lv_obj_t *MapView::create(lv_obj_t *parent, const char *application_name)
     lv_obj_set_size(tile_layer_, LV_PCT(100), LV_PCT(100));
     make_plain(tile_layer_);
     lv_obj_clear_flag(tile_layer_, LV_OBJ_FLAG_CLICKABLE);
+
+    search_band_ = lv_obj_create(map_viewport_);
+    lv_obj_set_name_static(search_band_, "map_search_band");
+    lv_obj_set_height(search_band_, 52);
+    make_plain(search_band_);
+    lv_obj_add_flag(search_band_, LV_OBJ_FLAG_FLOATING);
+    lv_obj_clear_flag(search_band_, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_pad_column(search_band_, 8, 0);
+    lv_obj_set_flex_flow(search_band_, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(search_band_, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_align(search_band_, LV_ALIGN_TOP_MID, 0, 12);
+
+    search_input_ = lv_textarea_create(search_band_);
+    lv_obj_set_name_static(search_input_, "map_search_input");
+    lv_obj_set_height(search_input_, 52);
+    lv_obj_set_flex_grow(search_input_, 1);
+    lv_obj_set_style_radius(search_input_, 6, 0);
+    lv_obj_set_style_border_width(search_input_, 1, 0);
+    lv_obj_set_style_border_color(search_input_, lv_color_hex(components::color_border), 0);
+    lv_obj_set_style_bg_color(search_input_, lv_color_hex(components::color_page_background), 0);
+    lv_obj_set_style_bg_opa(search_input_, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_font(search_input_, lilygo_ui_font_get(22), 0);
+    lv_obj_set_style_text_color(search_input_, lv_color_hex(components::color_text), 0);
+    lv_textarea_set_one_line(search_input_, true);
+    lv_textarea_set_max_length(search_input_, 160);
+    lv_textarea_set_placeholder_text(search_input_, "Search address");
+    lv_obj_add_event_cb(search_input_, search_input_event, LV_EVENT_FOCUSED, this);
+    lv_obj_add_event_cb(search_input_, search_input_event, LV_EVENT_CLICKED, this);
+    lv_obj_add_event_cb(search_input_, search_input_event, LV_EVENT_DEFOCUSED, this);
+    lv_obj_add_event_cb(search_input_, search_input_event, LV_EVENT_KEY, this);
+    lv_obj_add_event_cb(search_input_, search_input_event, LV_EVENT_READY, this);
+    lv_obj_add_event_cb(search_input_, search_input_event, LV_EVENT_CANCEL, this);
+
+    auto *search_button = make_icon_button(search_band_, kSearchSymbol, "map_search_button", search_event, this,
+                                           components::color_container_background, components::color_action);
+    lv_obj_set_size(search_button, 58, 52);
 
     auto *marker = lv_obj_create(map_viewport_);
     lv_obj_set_name_static(marker, "map_center_marker");
@@ -163,13 +156,16 @@ lv_obj_t *MapView::create(lv_obj_t *parent, const char *application_name)
     auto *zoom_out = make_icon_button(zoom_controls_, LV_SYMBOL_MINUS, "map_zoom_out", zoom_out_event, this);
     lv_obj_set_style_border_width(zoom_in, 0, 0);
     lv_obj_set_style_border_width(zoom_out, 0, 0);
-    lv_obj_align(zoom_controls_, LV_ALIGN_TOP_RIGHT, -12, 12);
+    lv_obj_align(zoom_controls_, LV_ALIGN_TOP_RIGHT, -12, 76);
 
     locate_button_ = make_icon_button(map_viewport_, LV_SYMBOL_GPS, "map_locate_button", locate_event, this,
                                       components::color_container_background, components::color_action);
-    lv_obj_align(locate_button_, LV_ALIGN_TOP_RIGHT, -12, 128);
+    lv_obj_align(locate_button_, LV_ALIGN_TOP_RIGHT, -12, 192);
 
-    locate_hint_ = make_label(map_viewport_, "Return to IP location", 14, components::color_text);
+    cache_button_ = make_icon_button(map_viewport_, LV_SYMBOL_TRASH, "map_cache_button", show_clear_event, this,
+                                     components::color_destructive);
+
+    locate_hint_ = make_label(map_viewport_, "Return to current location", 14, components::color_text);
     lv_obj_set_name_static(locate_hint_, "map_locate_hint");
     lv_obj_set_style_bg_color(locate_hint_, lv_color_hex(components::color_container_background), 0);
     lv_obj_set_style_bg_opa(locate_hint_, LV_OPA_COVER, 0);
@@ -232,12 +228,12 @@ lv_obj_t *MapView::create(lv_obj_t *parent, const char *application_name)
     lv_obj_set_style_border_width(keyboard_, 0, 0);
     lv_obj_set_style_radius(keyboard_, 0, 0);
     lv_obj_set_style_text_font(keyboard_, lilygo_ui_font_get(22), LV_PART_ITEMS);
-    lv_keyboard_set_textarea(keyboard_, search_input_);
     lv_obj_add_event_cb(keyboard_, keyboard_event, LV_EVENT_READY, this);
     lv_obj_add_event_cb(keyboard_, keyboard_event, LV_EVENT_CANCEL, this);
     lv_obj_align(keyboard_, LV_ALIGN_BOTTOM_MID, 0, 0);
 
     confirmation_ = lv_obj_create(surface_);
+    cm0_input_set_focus_scope(confirmation_);
     lv_obj_set_name_static(confirmation_, "map_cache_confirmation");
     lv_obj_add_flag(confirmation_, LV_OBJ_FLAG_FLOATING);
     lv_obj_add_flag(confirmation_, LV_OBJ_FLAG_HIDDEN);
@@ -291,9 +287,7 @@ void MapView::destroy() noexcept
     clear_tile_widgets();
     if (surface_) lv_obj_delete(surface_);
     surface_       = nullptr;
-    header_        = nullptr;
     search_band_   = nullptr;
-    search_inner_  = nullptr;
     search_input_  = nullptr;
     map_viewport_  = nullptr;
     tile_layer_    = nullptr;
@@ -301,6 +295,7 @@ void MapView::destroy() noexcept
     attribution_   = nullptr;
     zoom_controls_ = nullptr;
     locate_button_ = nullptr;
+    cache_button_  = nullptr;
     locate_hint_   = nullptr;
     keyboard_      = nullptr;
     confirmation_  = nullptr;
@@ -323,10 +318,33 @@ void MapView::size_changed_event(lv_event_t *event)
     }
 }
 
-void MapView::search_focus_event(lv_event_t *event)
+void MapView::search_input_event(lv_event_t *event)
 {
     auto *view = static_cast<MapView *>(lv_event_get_user_data(event));
-    if (view) view->show_keyboard();
+    if (!view) return;
+    switch (lv_event_get_code(event)) {
+        case LV_EVENT_FOCUSED:
+        case LV_EVENT_CLICKED:
+            view->show_keyboard();
+            break;
+        case LV_EVENT_READY:
+            view->submit_search();
+            break;
+        case LV_EVENT_KEY: {
+            view->hide_keyboard();
+            auto *group = lv_obj_get_group(view->search_input_);
+            if (group && lv_group_get_focused(group) == view->search_input_) {
+                lv_obj_add_state(view->search_input_, LV_STATE_FOCUSED);
+            }
+            break;
+        }
+        case LV_EVENT_DEFOCUSED:
+        case LV_EVENT_CANCEL:
+            view->hide_keyboard();
+            break;
+        default:
+            break;
+    }
 }
 
 void MapView::search_event(lv_event_t *event)
@@ -339,8 +357,15 @@ void MapView::keyboard_event(lv_event_t *event)
 {
     auto *view = static_cast<MapView *>(lv_event_get_user_data(event));
     if (!view) return;
-    if (lv_event_get_code(event) == LV_EVENT_READY) view->submit_search();
-    else view->hide_keyboard();
+    auto *input = lv_indev_active();
+    // The runtime also routes physical Enter to the textarea's READY event.
+    // Submit here only for the on-screen keyboard to avoid two searches.
+    if (lv_event_get_code(event) == LV_EVENT_READY &&
+        (!input || lv_indev_get_type(input) != LV_INDEV_TYPE_KEYPAD)) {
+        view->submit_search();
+    } else {
+        view->hide_keyboard();
+    }
 }
 
 void MapView::zoom_in_event(lv_event_t *event)
@@ -364,7 +389,7 @@ void MapView::locate_event(lv_event_t *event)
     auto *view = static_cast<MapView *>(lv_event_get_user_data(event));
     if (!view) return;
     view->hide_keyboard();
-    view->view_model_.return_to_ip_location();
+    view->view_model_.return_to_location();
     view->render_tiles();
 }
 
@@ -452,7 +477,7 @@ void MapView::timer_event(lv_timer_t *timer)
 
 void MapView::apply_layout() noexcept
 {
-    if (!surface_ || !header_ || !search_band_ || !search_inner_ || !map_status_ || !attribution_ || !dialog_ ||
+    if (!surface_ || !search_band_ || !map_status_ || !attribution_ || !cache_button_ || !dialog_ ||
         !keyboard_) {
         return;
     }
@@ -461,14 +486,17 @@ void MapView::apply_layout() noexcept
     const bool landscape  = width > height;
     const bool compact    = width < 420;
     const bool wide       = width >= 800;
-    lv_obj_set_height(header_, landscape ? 64 : 76);
-    lv_obj_set_height(search_band_, compact ? 64 : 70);
-    lv_obj_set_width(search_inner_, wide ? 760 : LV_PCT(100));
+    const int attribution_bottom = wide ? 76 : 110;
+    lv_obj_set_width(search_band_, std::min(760, std::max(0, width - 24)));
     lv_obj_set_width(map_status_, wide ? 440 : (compact ? LV_PCT(72) : LV_PCT(64)));
-    lv_obj_align(attribution_, wide || landscape ? LV_ALIGN_BOTTOM_RIGHT : LV_ALIGN_BOTTOM_LEFT,
-                 wide || landscape ? -12 : 12, wide || landscape ? -12 : -110);
+    lv_obj_align(attribution_, wide ? LV_ALIGN_BOTTOM_RIGHT : LV_ALIGN_BOTTOM_LEFT,
+                 wide ? -12 : 12, -attribution_bottom);
     lv_obj_set_width(dialog_, compact ? LV_PCT(90) : 480);
     lv_obj_set_height(keyboard_, landscape ? std::min(240, std::max(180, height - 180)) : 280);
+    lv_obj_update_layout(map_viewport_);
+    const int bottom_info_height = std::max(12 + lv_obj_get_height(map_status_),
+                                            attribution_bottom + lv_obj_get_height(attribution_));
+    lv_obj_align(cache_button_, LV_ALIGN_BOTTOM_RIGHT, -12, -bottom_info_height - 12);
 }
 
 void MapView::submit_search()
@@ -482,6 +510,11 @@ void MapView::show_keyboard()
 {
     if (!keyboard_ || !search_input_) return;
     if (locate_hint_) lv_obj_add_flag(locate_hint_, LV_OBJ_FLAG_HIDDEN);
+    auto *input = lv_indev_active();
+    if (cm0_input_hardware_keyboard_present() || (input && lv_indev_get_type(input) == LV_INDEV_TYPE_KEYPAD)) {
+        hide_keyboard();
+        return;
+    }
     lv_keyboard_set_textarea(keyboard_, search_input_);
     lv_obj_clear_flag(keyboard_, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(keyboard_);

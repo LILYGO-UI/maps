@@ -18,7 +18,7 @@ void app_open(const cm0_app_context_t *context)
 {
     app_state.map_view_model = std::make_unique<MapViewModel>();
     app_state.map_view       = std::make_unique<MapView>(*app_state.map_view_model);
-    app_state.map_view->create(context->root, LILYGO_UI_TEMPLATE_APP_NAME);
+    app_state.map_view->create(context->root);
     app_state.map_view_model->start();
 }
 

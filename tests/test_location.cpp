@@ -183,7 +183,7 @@ MapServiceEvent await_location(MapService &service, std::uint64_t request)
 
 MapServiceEvent locate(const Fixture &fixture)
 {
-    MapService service(fixture.root / "openstreetmap");
+    MapService service(fixture.root / "openstreetmap", [] { return std::optional<GnssFix>{}; });
     auto event = await_location(service, service.locate_by_ip());
     MapServiceEvent extra;
     while (service.poll(extra)) assert(!is_location(extra));
@@ -317,7 +317,7 @@ void test_cancelled_and_stale_requests(Fixture &fixture)
     fixture.reset();
     write_file(fixture.root / "block-first", "");
     {
-        MapService service(fixture.root / "openstreetmap");
+        MapService service(fixture.root / "openstreetmap", [] { return std::optional<GnssFix>{}; });
         service.locate_by_ip();
         wait_until([&] { return std::filesystem::exists(fixture.root / "blocked"); });
     }
@@ -326,7 +326,7 @@ void test_cancelled_and_stale_requests(Fixture &fixture)
     fixture.reset();
     write_file(fixture.root / "block-first", "");
     {
-        MapService service(fixture.root / "openstreetmap");
+        MapService service(fixture.root / "openstreetmap", [] { return std::optional<GnssFix>{}; });
         const auto stale = service.locate_by_ip();
         wait_until([&] { return std::filesystem::exists(fixture.root / "blocked"); });
         const auto current = service.locate_by_ip();
@@ -341,6 +341,86 @@ void test_cancelled_and_stale_requests(Fixture &fixture)
     fixture.expect_order({0, 0});
 }
 
+void drain(MapService &service)
+{
+    MapServiceEvent event;
+    while (service.poll(event)) assert(!is_location(event));
+}
+
+void test_gnss_priority_and_expiry(Fixture &fixture)
+{
+    fixture.reset();
+    std::optional<GnssFix> fix;
+    MapService service(fixture.root / "openstreetmap", [&] { return fix; });
+    const auto request = service.locate();
+    auto event = await_location(service, request);
+    expect_point(event, 31.2304, 121.4737);
+    assert(event.location_source == LocationSource::Ip);
+
+    fix = GnssFix{{22.5431, 114.0579}, 1, std::chrono::steady_clock::now()};
+    event = await_location(service, request);
+    expect_point(event, 22.5431, 114.0579);
+    assert(event.location_source == LocationSource::Gnss);
+    drain(service);
+
+    fix->received_at -= GnssService::fix_max_age + std::chrono::seconds(1);
+    event = await_location(service, request);
+    expect_point(event, 31.2304, 121.4737);
+    assert(event.location_source == LocationSource::Ip);
+    assert(!service.current_gnss_fix());
+    drain(service);
+
+    fix = GnssFix{{0, 0}, 2, std::chrono::steady_clock::now()};
+    event = await_location(service, request);
+    expect_point(event, 0, 0);
+    assert(event.location_source == LocationSource::Gnss);
+    fix.reset();
+    assert(await_location(service, request).location_source == LocationSource::Ip);
+    fixture.expect_order({0});
+}
+
+void test_late_ip_cannot_override_gnss(Fixture &fixture)
+{
+    fixture.reset();
+    write_file(fixture.root / "block-first", "");
+    std::optional<GnssFix> fix;
+    MapService service(fixture.root / "openstreetmap", [&] { return fix; });
+    const auto request = service.locate();
+    wait_until([&] { return std::filesystem::exists(fixture.root / "blocked"); });
+    fix = GnssFix{{22.5431, 114.0579}, 1, std::chrono::steady_clock::now()};
+    assert(await_location(service, request).location_source == LocationSource::Gnss);
+    write_file(fixture.root / "release", "");
+    wait_until([&] {
+        drain(service);
+        return service.cached_ip_location().has_value();
+    });
+    fix.reset();
+    const auto event = await_location(service, request);
+    expect_point(event, 51.5074, -0.1278);
+    assert(event.location_source == LocationSource::Ip);
+    fixture.expect_order({0, 1});
+}
+
+void test_offline_gnss_and_invalid_fixes(Fixture &fixture)
+{
+    fixture.reset();
+    ::setenv("LILYGO_MAPS_DISABLE_NETWORK", "1", 1);
+    std::optional<GnssFix> fix = GnssFix{{22.5431, 114.0579}, 1, std::chrono::steady_clock::now()};
+    MapService service(fixture.root / "openstreetmap", [&] { return fix; });
+    auto request = service.locate();
+    assert(await_location(service, request).location_source == LocationSource::Gnss);
+    request = service.locate();
+    assert(await_location(service, request).location_source == LocationSource::Gnss);
+    // A missing/invalid fix allows the pending network-disabled result through.
+    fix->point.latitude = 91;
+    assert(!service.current_gnss_fix());
+    assert(await_location(service, request).kind == MapServiceEventKind::LocationError);
+    fix->point.latitude = 22.5431;
+    fix->received_at = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    assert(!service.current_gnss_fix());
+    fixture.expect_order({});
+}
+
 }  // namespace
 
 int main(int argc, char **argv)
@@ -352,5 +432,8 @@ int main(int argc, char **argv)
     test_network_disabled(fixture);
     test_http_policy(fixture);
     test_cancelled_and_stale_requests(fixture);
+    test_gnss_priority_and_expiry(fixture);
+    test_late_ip_cannot_override_gnss(fixture);
+    test_offline_gnss_and_invalid_fixes(fixture);
     return 0;
 }

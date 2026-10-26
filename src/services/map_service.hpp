@@ -4,13 +4,16 @@
 #include "domain/map_model.hpp"
 #include "domain/tile_cache.hpp"
 #include "services/http_client.hpp"
+#include "services/gnss_service.hpp"
 
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -28,11 +31,15 @@ enum class MapServiceEventKind {
     CacheError,
 };
 
+enum class LocationSource { Ip, Gnss };
+using GnssFixProvider = std::function<std::optional<GnssFix>()>;
+
 struct MapServiceEvent {
     MapServiceEventKind kind = MapServiceEventKind::TileError;
     std::uint64_t request_id = 0;
     std::uint64_t generation = 0;
     GeoPoint point;
+    LocationSource location_source = LocationSource::Ip;
     TileId tile;
     std::filesystem::path path;
     std::string label;
@@ -42,13 +49,17 @@ struct MapServiceEvent {
 
 class MapService {
 public:
-    explicit MapService(std::filesystem::path cache_root = TileCache::default_root());
+    explicit MapService(std::filesystem::path cache_root = TileCache::default_root(),
+                        GnssFixProvider gnss_provider = {});
     ~MapService();
 
     MapService(const MapService &)            = delete;
     MapService &operator=(const MapService &) = delete;
 
-    std::uint64_t locate_by_ip();
+    std::uint64_t locate();
+    std::uint64_t locate_by_ip() { return locate(); }
+    [[nodiscard]] std::optional<GnssFix> current_gnss_fix() const;
+    [[nodiscard]] std::optional<MapServiceEvent> cached_ip_location() const;
     std::uint64_t search(std::string query);
     void request_tiles(std::uint64_t generation, const std::vector<TileId> &tiles);
     void clear_cache();
@@ -85,6 +96,14 @@ private:
 
     TileCache cache_;
     HttpClient http_;
+    GnssService gnss_;
+    GnssFixProvider gnss_provider_;
+    // Location selection and these caches belong to the caller of poll().
+    std::optional<MapServiceEvent> ip_location_;
+    std::optional<MapServiceEvent> location_failure_;
+    bool gnss_active_ = false;
+    std::uint64_t gnss_sequence_ = 0;
+    std::uint64_t gnss_request_id_ = 0;
     std::vector<std::thread> workers_;
     mutable std::mutex mutex_;
     std::condition_variable condition_;

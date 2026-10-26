@@ -15,7 +15,7 @@ public:
     explicit MapView(MapViewModel &view_model) noexcept;
     ~MapView() noexcept;
 
-    lv_obj_t *create(lv_obj_t *parent, const char *application_name);
+    lv_obj_t *create(lv_obj_t *parent);
     void destroy() noexcept;
 
 private:
@@ -26,7 +26,7 @@ private:
     };
 
     static void size_changed_event(lv_event_t *event);
-    static void search_focus_event(lv_event_t *event);
+    static void search_input_event(lv_event_t *event);
     static void search_event(lv_event_t *event);
     static void keyboard_event(lv_event_t *event);
     static void zoom_in_event(lv_event_t *event);
@@ -50,9 +50,7 @@ private:
 
     MapViewModel &view_model_;
     lv_obj_t *surface_       = nullptr;
-    lv_obj_t *header_        = nullptr;
     lv_obj_t *search_band_   = nullptr;
-    lv_obj_t *search_inner_  = nullptr;
     lv_obj_t *search_input_  = nullptr;
     lv_obj_t *map_viewport_  = nullptr;
     lv_obj_t *tile_layer_    = nullptr;
@@ -60,6 +58,7 @@ private:
     lv_obj_t *attribution_   = nullptr;
     lv_obj_t *zoom_controls_ = nullptr;
     lv_obj_t *locate_button_ = nullptr;
+    lv_obj_t *cache_button_  = nullptr;
     lv_obj_t *locate_hint_   = nullptr;
     lv_obj_t *keyboard_      = nullptr;
     lv_obj_t *confirmation_  = nullptr;

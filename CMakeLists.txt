@@ -35,6 +35,8 @@ target_compile_options(lilygo_ui_maps_core PRIVATE
 target_compile_features(lilygo_ui_maps_core PUBLIC cxx_std_17)
 
 add_library(lilygo_ui_maps_services STATIC
+    src/services/gnss_protocol.cpp
+    src/services/gnss_service.cpp
     src/services/http_client.cpp
     src/services/map_service.cpp)
 target_include_directories(lilygo_ui_maps_services PUBLIC
@@ -111,6 +113,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME maps-location COMMAND maps-location-tests)
     set_tests_properties(maps-location PROPERTIES TIMEOUT 20)
 
+    add_executable(maps-gnss-tests tests/test_gnss.cpp)
+    target_compile_options(maps-gnss-tests PRIVATE -Wall -Wextra -Wpedantic -UNDEBUG)
+    target_link_libraries(maps-gnss-tests PRIVATE lilygo_ui_maps_services)
+    add_test(NAME maps-gnss COMMAND maps-gnss-tests)
+    set_tests_properties(maps-gnss PROPERTIES TIMEOUT 60)
+
     add_executable(maps-view-model-tests tests/test_view_model.cpp)
     target_compile_options(maps-view-model-tests PRIVATE
         -Wall -Wextra -Wpedantic -UNDEBUG)
@@ -135,6 +143,8 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
             ${_width} ${_height}
             ${CMAKE_CURRENT_BINARY_DIR}/maps-${viewport}.ppm)
     endforeach()
+    set_tests_properties(maps-core maps-location maps-view-model maps-render-portrait maps-render-landscape
+        PROPERTIES ENVIRONMENT "LILYGO_MAPS_DISABLE_GNSS=1")
 endif()
 
 # New applications have no legacy CM0 package to replace. Add Debian migration

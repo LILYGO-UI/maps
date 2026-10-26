@@ -73,6 +73,49 @@ void pump(int milliseconds, bool real_time = false)
     }
 }
 
+class KeypadInput {
+public:
+    KeypadInput(lv_obj_t *input, lv_obj_t *next)
+    {
+        group = lv_group_create();
+        indev = lv_indev_create();
+        assert(group && indev);
+        lv_indev_set_type(indev, LV_INDEV_TYPE_KEYPAD);
+        lv_indev_set_group(indev, group);
+        lv_indev_set_user_data(indev, this);
+        lv_indev_set_read_cb(indev, [](lv_indev_t *device, lv_indev_data_t *data) {
+            auto *keypad = static_cast<KeypadInput *>(lv_indev_get_user_data(device));
+            data->key   = keypad->key;
+            data->state = keypad->state;
+        });
+        lv_group_add_obj(group, input);
+        lv_group_add_obj(group, next);
+        lv_group_focus_obj(input);
+    }
+
+    ~KeypadInput()
+    {
+        lv_indev_delete(indev);
+        lv_group_delete(group);
+    }
+
+    void press(std::uint32_t value)
+    {
+        key   = value;
+        state = LV_INDEV_STATE_PRESSED;
+        lv_indev_read(indev);
+        state = LV_INDEV_STATE_RELEASED;
+        lv_indev_read(indev);
+    }
+
+    lv_group_t *group = nullptr;
+
+private:
+    lv_indev_t *indev = nullptr;
+    std::uint32_t key = 0;
+    lv_indev_state_t state = LV_INDEV_STATE_RELEASED;
+};
+
 }  // namespace
 
 int main(int argc, char **argv)
@@ -85,6 +128,7 @@ int main(int argc, char **argv)
     const bool online        = online_value && std::string(online_value) == "1";
     const char *online_query = std::getenv("LILYGO_MAPS_RENDER_QUERY");
     if (!online) ::setenv("LILYGO_MAPS_DISABLE_NETWORK", "1", 1);
+    ::setenv("LILYGO_MAPS_DISABLE_GNSS", "1", 1);
     ::setenv("LILYGO_MAPS_CACHE_DIR", "/tmp/lilygo-maps-render-cache/openstreetmap", 1);
     std::error_code ignored;
     if (!online) std::filesystem::remove_all("/tmp/lilygo-maps-render-cache", ignored);
@@ -128,22 +172,44 @@ int main(int argc, char **argv)
     auto *cache_button  = lv_obj_find_by_name(context.root, "map_cache_button");
     auto *confirmation  = lv_obj_find_by_name(context.root, "map_cache_confirmation");
     auto *keyboard      = lv_obj_find_by_name(context.root, "map_keyboard");
-    assert(surface && header && title && search_band && search_input && search_button && viewport && tile_layer &&
+    assert(!header && !title);
+    assert(surface && search_band && search_input && search_button && viewport && tile_layer &&
            marker && zoom_controls && zoom_in && zoom_out && locate && locate_hint && status && attribution &&
            cache_button && confirmation && keyboard);
-    assert(std::string(lv_label_get_text(title)) == "Maps");
-    assert(lv_obj_get_width(viewport) == width);
-    assert(lv_obj_get_height(viewport) > 220);
-    assert(!intersects(status, attribution));
-    assert(!intersects(status, zoom_controls));
-    assert(lv_obj_is_visible(locate));
-    assert(contains(viewport, locate));
-    assert(!intersects(locate, status));
-    assert(!intersects(locate, zoom_controls));
-    assert(!intersects(locate, attribution));
+    const auto verify_layout = [&](int expected_width, int expected_height) {
+        assert(lv_obj_get_width(viewport) == expected_width);
+        assert(lv_obj_get_height(viewport) == expected_height - 40);
+        assert(lv_obj_get_height(viewport) == lv_obj_get_content_height(surface));
+        assert(lv_obj_get_parent(search_band) == viewport);
+        assert(lv_obj_get_index(search_band) > lv_obj_get_index(tile_layer));
+        assert(lv_obj_get_style_bg_opa(search_band, LV_PART_MAIN) == LV_OPA_TRANSP);
+        assert(contains(viewport, search_band));
+        assert(contains(search_band, search_input));
+        assert(contains(search_band, search_button));
+        assert(intersects(search_input, tile_layer));
+        bool tiles_under_search = false;
+        for (std::uint32_t index = 0; index < lv_obj_get_child_count(tile_layer); ++index) {
+            tiles_under_search |= intersects(search_input, lv_obj_get_child(tile_layer, index));
+        }
+        assert(tiles_under_search);
+        for (auto *control : {zoom_controls, locate, cache_button}) {
+            assert(lv_obj_is_visible(control));
+            assert(contains(viewport, control));
+            assert(!intersects(search_band, control));
+            assert(!intersects(control, status));
+            assert(!intersects(control, attribution));
+        }
+        assert(!intersects(search_input, search_button));
+        assert(!intersects(status, attribution));
+        assert(!intersects(locate, zoom_controls));
+        assert(!intersects(cache_button, zoom_controls));
+        assert(!intersects(cache_button, locate));
+    };
+    verify_layout(width, height);
     assert(lv_obj_has_flag(locate_hint, LV_OBJ_FLAG_HIDDEN));
     assert(lv_obj_has_flag(confirmation, LV_OBJ_FLAG_HIDDEN));
     assert(lv_obj_has_flag(keyboard, LV_OBJ_FLAG_HIDDEN));
+    assert(lv_keyboard_get_textarea(keyboard) == nullptr);
     assert(lv_obj_get_child_count(tile_layer) > 0);
 
     if (online) {
@@ -172,7 +238,93 @@ int main(int argc, char **argv)
     assert(status_label);
     assert(std::string(lv_label_get_text(status_label)) == "Enter an address to search");
 
-    assert(std::string(lv_label_get_text(locate_hint)) == "Return to IP location");
+    {
+        KeypadInput keypad(search_input, search_button);
+        lv_textarea_set_text(search_input, "");
+        for (const char character : std::string("Pais")) keypad.press(character);
+        assert(std::string(lv_textarea_get_text(search_input)) == "Pais");
+        assert(lv_obj_has_state(search_input, LV_STATE_FOCUSED));
+        assert(lv_obj_has_flag(keyboard, LV_OBJ_FLAG_HIDDEN));
+        assert(lv_keyboard_get_textarea(keyboard) == nullptr);
+        keypad.press(LV_KEY_LEFT);
+        keypad.press(LV_KEY_LEFT);
+        assert(lv_textarea_get_cursor_pos(search_input) == 2);
+        keypad.press('r');
+        keypad.press(LV_KEY_RIGHT);
+        keypad.press(LV_KEY_RIGHT);
+        assert(lv_textarea_get_cursor_pos(search_input) == 5);
+        for (const char character : std::string(" 2x")) keypad.press(character);
+        keypad.press(LV_KEY_BACKSPACE);
+        assert(std::string(lv_textarea_get_text(search_input)) == "Paris 2");
+
+        // Resize the existing page in both directions while an editor owns focus.
+        // The pixel count stays constant, so the existing draw buffer can be reused.
+        for (const bool rotated : {true, false}) {
+            const int resized_width  = rotated ? height : width;
+            const int resized_height = rotated ? width : height;
+            display_width = resized_width;
+            lv_display_set_resolution(display, resized_width, resized_height);
+            lv_obj_update_layout(context.root);
+            pump(100);
+            verify_layout(resized_width, resized_height);
+            assert(std::string(lv_textarea_get_text(search_input)) == "Paris 2");
+            assert(lv_group_get_focused(keypad.group) == search_input);
+            assert(lv_obj_has_flag(keyboard, LV_OBJ_FLAG_HIDDEN));
+        }
+
+        unsigned ready_count = 0;
+        auto *ready_observer = lv_obj_add_event_cb(search_input, [](lv_event_t *event) {
+            ++*static_cast<unsigned *>(lv_event_get_user_data(event));
+        }, LV_EVENT_READY, &ready_count);
+        keypad.press(LV_KEY_ENTER);
+        assert(ready_count == 1);
+        assert(std::string(lv_label_get_text(status_label)) == "Searching for address...");
+        assert(lv_obj_has_flag(keyboard, LV_OBJ_FLAG_HIDDEN));
+        assert(lv_keyboard_get_textarea(keyboard) == nullptr);
+        for (int index = 0; index < 7; ++index) keypad.press(LV_KEY_BACKSPACE);
+        assert(std::string(lv_textarea_get_text(search_input)).empty());
+        keypad.press(LV_KEY_ENTER);
+        assert(ready_count == 2);
+        assert(std::string(lv_label_get_text(status_label)) == "Enter an address to search");
+        lv_obj_remove_event_dsc(search_input, ready_observer);
+
+        // Pointer reactivation restores software input even when focus never moved.
+        lv_obj_send_event(search_input, LV_EVENT_CLICKED, nullptr);
+        assert(!lv_obj_has_flag(keyboard, LV_OBJ_FLAG_HIDDEN));
+        assert(lv_keyboard_get_textarea(keyboard) == search_input);
+        lv_obj_send_event(search_input, LV_EVENT_CANCEL, nullptr);
+        assert(lv_obj_has_flag(keyboard, LV_OBJ_FLAG_HIDDEN));
+        assert(lv_keyboard_get_textarea(keyboard) == nullptr);
+        lv_obj_send_event(search_input, LV_EVENT_CLICKED, nullptr);
+        assert(!lv_obj_has_flag(keyboard, LV_OBJ_FLAG_HIDDEN));
+        keypad.press(LV_KEY_NEXT);
+        assert(lv_group_get_focused(keypad.group) == search_button);
+        assert(lv_obj_has_flag(keyboard, LV_OBJ_FLAG_HIDDEN));
+        assert(lv_keyboard_get_textarea(keyboard) == nullptr);
+        keypad.press(LV_KEY_PREV);
+        assert(lv_group_get_focused(keypad.group) == search_input);
+        assert(lv_obj_has_flag(keyboard, LV_OBJ_FLAG_HIDDEN));
+        assert(lv_keyboard_get_textarea(keyboard) == nullptr);
+    }
+
+    lv_obj_send_event(search_input, LV_EVENT_CLICKED, nullptr);
+    assert(!lv_obj_has_flag(keyboard, LV_OBJ_FLAG_HIDDEN));
+    assert(lv_keyboard_get_textarea(keyboard) == search_input);
+    lv_textarea_set_text(search_input, "London");
+    lv_obj_send_event(keyboard, LV_EVENT_READY, nullptr);
+    assert(std::string(lv_label_get_text(status_label)) == "Searching for address...");
+    assert(lv_obj_has_flag(keyboard, LV_OBJ_FLAG_HIDDEN));
+    assert(lv_keyboard_get_textarea(keyboard) == nullptr);
+    lv_obj_send_event(search_input, LV_EVENT_CLICKED, nullptr);
+    assert(!lv_obj_has_flag(keyboard, LV_OBJ_FLAG_HIDDEN));
+    assert(lv_keyboard_get_textarea(keyboard) == search_input);
+    lv_obj_send_event(keyboard, LV_EVENT_CANCEL, nullptr);
+    assert(lv_obj_has_flag(keyboard, LV_OBJ_FLAG_HIDDEN));
+    assert(lv_keyboard_get_textarea(keyboard) == nullptr);
+    assert(std::string(lv_textarea_get_text(search_input)) == "London");
+    lv_textarea_set_text(search_input, "");
+
+    assert(std::string(lv_label_get_text(locate_hint)) == "Return to current location");
     for (const auto hide_event : {LV_EVENT_HOVER_LEAVE, LV_EVENT_RELEASED, LV_EVENT_PRESS_LOST}) {
         lv_obj_send_event(locate, LV_EVENT_HOVER_OVER, nullptr);
         lv_obj_update_layout(context.root);

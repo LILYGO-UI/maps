@@ -4,8 +4,9 @@
 
 LILYGO Maps is an online map viewer for LILYGO UI, built with C++17,
 [LILYGO UI AppKit](https://github.com/LILYGO-UI/cm0-appkit) and LVGL 9.5.
-It opens near your approximate public-IP location, lets you browse and search
-OpenStreetMap, and caches downloaded tiles on the device for reuse.
+It prefers a fresh nRF9151 GNSS fix and falls back to approximate public-IP
+location, lets you browse and search OpenStreetMap, and caches downloaded tiles
+on the device for reuse.
 
 The project provides a CM0 ARM64 Linux build and an SDL2 desktop simulator
 for development and testing.
@@ -20,20 +21,25 @@ for development and testing.
 ## Features
 
 - **Map browsing:** drag to pan and use zoom controls to explore OpenStreetMap.
-- **Startup location:** locate the device by public IP, with fallback providers
-  and a world view when lookup fails. Return to the last successful IP location
-  with the location button.
+- **Current location:** prefer nRF9151 GNSS, use public IP while acquiring a fix
+  or when GNSS is unavailable, and switch automatically as fixes arrive or expire.
+  The location button returns to fresh GNSS or the last successful IP location.
 - **Address search:** find places with OpenStreetMap Nominatim, including Chinese
   and English address queries.
 - **Local tile cache:** reuse downloaded tiles, view cache usage, and clear the
   cache after confirmation. Previously cached areas remain available offline.
-- **Responsive interface:** portrait and landscape layouts, an on-screen keyboard,
-  and map attribution.
+- **Responsive interface:** a search field floating over the map, portrait and
+  landscape layouts, an on-screen keyboard, and map attribution.
+- **Physical keyboard:** focus the search field to type an address, edit with
+  Backspace and arrow keys, and press Enter to search or Esc to leave editing.
+  Physical keyboard input hides the on-screen keyboard.
 - **Background work:** location lookup, search, and tile downloads run on worker
   threads to keep the interface responsive.
 
-IP location is approximate and can be affected by a VPN or proxy. New tiles,
-location lookup, and address search require internet access. See
+GNSS requires compatible Nordic SLM firmware, an available modem UART, and a GNSS
+antenna with a clear view of the sky. GNSS positioning works offline. IP location
+is approximate and can be affected by a VPN or proxy. New tiles, IP lookup, and
+address search require internet access. See
 [services and cache configuration](docs/02-services-and-cache.md) for details.
 
 ## Development Environment
@@ -172,7 +178,8 @@ lpm test
 | Test | Coverage |
 | --- | --- |
 | `maps-core` | Projection, date-line wrapping, visible tiles, PNG validation, and cache operations |
-| `maps-location` | IP provider fallback, invalid responses, and HTTP protocol restrictions |
+| `maps-location` | GNSS priority and expiry, IP provider fallback, invalid responses, and HTTP protocol restrictions |
+| `maps-gnss` | GNSS protocol validation and serial lifecycle |
 | `maps-view-model` | User commands and asynchronous state updates |
 | `maps-render-portrait` | Rendering and main interactions at `568 x 1232` |
 | `maps-render-landscape` | Rendering and main interactions at `1232 x 568` |

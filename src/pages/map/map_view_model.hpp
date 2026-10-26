@@ -22,10 +22,12 @@ struct MapPresentationEvent {
 
 class MapViewModel {
 public:
-    explicit MapViewModel(std::filesystem::path cache_root = TileCache::default_root());
+    explicit MapViewModel(std::filesystem::path cache_root = TileCache::default_root(),
+                          GnssFixProvider gnss_provider = {});
 
     void start();
     void locate();
+    void return_to_location();
     void return_to_ip_location();
     void search(std::string query);
     void clear_cache();
@@ -49,19 +51,21 @@ private:
     void publish_cache(CacheStats stats);
     void publish_zoom() noexcept;
     void show_ip_location();
+    bool show_gnss_location(GeoPoint point, bool reset_zoom);
 
     MapModel model_;
     MapService service_;
     StringSubject<192> status_{"Finding your current location..."};
-    StringSubject<192> location_{"IP location pending"};
+    StringSubject<192> location_{"Location pending"};
     StringSubject<64> cache_{"Cache 0 B"};
     IntSubject zoom_{model_.zoom(), MapModel::minimum_zoom, MapModel::maximum_zoom};
     std::uint64_t viewport_generation_ = 0;
     std::uint64_t active_search_id_     = 0;
     std::optional<GeoPoint> ip_location_;
     std::string ip_location_label_;
+    std::optional<LocationSource> displayed_location_source_;
     bool map_ready_                    = false;
-    bool accept_ip_location_           = true;
+    bool follow_location_              = true;
 };
 
 #endif

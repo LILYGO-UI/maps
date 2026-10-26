@@ -123,7 +123,8 @@ std::string location_label(json_object *root, LocationProviderKind provider)
 
 }  // namespace
 
-MapService::MapService(std::filesystem::path cache_root) : cache_(std::move(cache_root))
+MapService::MapService(std::filesystem::path cache_root, GnssFixProvider gnss_provider)
+    : cache_(std::move(cache_root)), gnss_provider_(std::move(gnss_provider))
 {
     constexpr int kWorkerCount = 2;
     workers_.reserve(kWorkerCount);
@@ -147,8 +148,9 @@ MapService::~MapService()
     }
 }
 
-std::uint64_t MapService::locate_by_ip()
+std::uint64_t MapService::locate()
 {
+    if (!gnss_provider_) gnss_.start();
     const auto request = next_request_id_.fetch_add(1);
     latest_location_id_.store(request);
     {
@@ -240,6 +242,35 @@ void MapService::clear_cache()
 
 bool MapService::poll(MapServiceEvent &event)
 {
+    const auto fix = current_gnss_fix();
+    const auto request = latest_location_id_.load();
+    if (request != 0 && fix) {
+        if (!gnss_active_ || fix->sequence != gnss_sequence_ || request != gnss_request_id_) {
+            gnss_active_ = true;
+            gnss_sequence_ = fix->sequence;
+            gnss_request_id_ = request;
+            event = {};
+            event.kind = MapServiceEventKind::LocationReady;
+            event.request_id = request;
+            event.location_source = LocationSource::Gnss;
+            event.point = fix->point;
+            std::ostringstream label;
+            label.imbue(std::locale::classic());
+            label << "GNSS " << std::fixed << std::setprecision(6)
+                  << fix->point.latitude << ", " << fix->point.longitude;
+            event.label = label.str();
+            return true;
+        }
+    } else if (gnss_active_) {
+        gnss_active_ = false;
+        const auto &fallback = ip_location_ ? ip_location_ : location_failure_;
+        if (fallback) {
+            event = *fallback;
+            event.request_id = request;
+            return true;
+        }
+    }
+
     std::lock_guard<std::mutex> lock(mutex_);
     while (!events_.empty()) {
         event = std::move(events_.front());
@@ -254,9 +285,35 @@ bool MapService::poll(MapServiceEvent &event)
         const bool stale_tile =
             (event.kind == MapServiceEventKind::TileReady || event.kind == MapServiceEventKind::TileError) &&
             event.generation != latest_tile_generation_.load();
-        if (!stale_location && !stale_search && !stale_tile) return true;
+        if (stale_location || stale_search || stale_tile) continue;
+        if (event.kind == MapServiceEventKind::LocationReady) {
+            ip_location_ = event;
+            location_failure_.reset();
+            if (fix) continue;
+        } else if (event.kind == MapServiceEventKind::LocationError) {
+            location_failure_ = event;
+            if (fix) continue;
+        }
+        return true;
     }
     return false;
+}
+
+std::optional<GnssFix> MapService::current_gnss_fix() const
+{
+    const auto fix = gnss_provider_ ? gnss_provider_() : gnss_.current_fix();
+    if (!fix) return std::nullopt;
+    const auto age = std::chrono::steady_clock::now() - fix->received_at;
+    if (age < std::chrono::steady_clock::duration::zero() || age > GnssService::fix_max_age ||
+        !std::isfinite(fix->point.latitude) || !std::isfinite(fix->point.longitude) ||
+        fix->point.latitude < -90.0 || fix->point.latitude > 90.0 ||
+        fix->point.longitude < -180.0 || fix->point.longitude > 180.0) return std::nullopt;
+    return fix;
+}
+
+std::optional<MapServiceEvent> MapService::cached_ip_location() const
+{
+    return ip_location_;
 }
 
 bool MapService::find_tile(const TileId &tile, std::filesystem::path &path) const
