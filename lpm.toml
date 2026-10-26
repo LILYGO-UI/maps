@@ -2,7 +2,7 @@ schema_version = 1
 
 [project]
 package = "lilygo-ui-maps"
-version = "0.1.0"
+version = "0.1.1"
 app_id = "cc.lilygo.ui.Maps"
 title = "Maps"
 summary = "Browse and search online maps with an on-device tile cache"
