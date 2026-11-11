@@ -267,3 +267,35 @@ tiles by [OpenStreetMap.de](https://www.openstreetmap.de/), and address search b
 [Nominatim](https://nominatim.org/). The interface uses LILYGO UI AppKit and
 [LVGL](https://lvgl.io/). Follow the relevant providers' usage policies when
 running or distributing the application.
+
+## K230 Debian packages
+
+K230 uses the `riscv64` architecture and the `k230-debian` preset. The default
+SDK is the pinned `third_party/cm0-appkit`; initialize its submodules and use
+an AppKit revision that provides `cmake/k230-debian-toolchain.cmake`.
+
+Prepare a Debian riscv64 sysroot with the selected SDK's
+`tools/prepare-riscv64-sysroot.py`. Linux builds require
+`gcc-riscv64-linux-gnu` and `g++-riscv64-linux-gnu`; macOS builds require
+Homebrew LLVM, LLD and dpkg (`brew install llvm lld dpkg`). Buildroot sysroots are not
+compatible with this Debian target.
+
+For this multi-repository workspace, prepare the shared sysroot once and
+select the sibling SDK on the first configure:
+
+```sh
+python3 ../cm0-appkit/tools/prepare-riscv64-sysroot.py
+cmake --preset k230-debian -DLilyGoUI_DIR="$PWD/../cm0-appkit"
+lpm pack --arch riscv64
+```
+
+The SDK uses `../cm0-appkit/.cache/k230-debian/sysroot` by default. To use a
+different Debian sysroot, set `LILYGO_UI_DEBIAN_SYSROOT` or pass
+`-DLILYGO_UI_DEBIAN_SYSROOT=/path/to/sysroot` while configuring. Set
+`LILYGO_UI_APPKIT_DIR` before the first configure to select another SDK, or
+use `-DLilyGoUI_DIR=...` to update the cached selection. Subsequent
+`lpm pack --arch riscv64` commands reuse that SDK and write a riscv64 Debian
+package to `dist/`. ARM64 remains available with `lpm pack --arch arm64`.
+
+Run `lpm set-target k230` once to save K230 as the default target, then use
+`lpm pack` directly.

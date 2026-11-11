@@ -1,6 +1,8 @@
 #include "services/gnss_service.hpp"
 #include "services/gnss_protocol.hpp"
 
+#include "platform_paths.hpp"
+
 #include <atomic>
 #include <cerrno>
 #include <condition_variable>
@@ -35,7 +37,7 @@ std::string configured_port()
 {
     for (const auto *name : {"LILYGO_MAPS_GNSS_PORT", "CELLULAR_PORT"})
         if (const auto *value = std::getenv(name); value && *value) return value;
-    return "/dev/ttyACM0";
+    return LILYGO_UI_DEFAULT_MODEM_PATH;
 }
 }  // namespace
 
@@ -132,7 +134,7 @@ struct GnssService::Impl {
     bool open_port()
     {
         // Keep this naming compatible with lilygo-ui-cellular and the device launcher.
-        const auto lock = port == "/dev/ttyACM0"
+        const auto lock = port == LILYGO_UI_DEFAULT_MODEM_PATH
                               ? "/tmp/lilygo_nrf9151_uart.lock"
                               : "/tmp/lilygo-cellular-" + std::to_string(std::hash<std::string>{}(port)) + ".lock";
         lock_fd         = ::open(lock.c_str(), O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0600);

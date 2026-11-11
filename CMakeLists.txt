@@ -6,7 +6,9 @@ project(${LILYGO_UI_CMAKE_PROJECT_NAME} LANGUAGES C CXX)
 include(GNUInstallDirs)
 include(CTest)
 # Match the 50 Hz panel in LVGL, the statically linked SDK, and this application.
-add_compile_definitions(LV_DEF_REFR_PERIOD=20)
+if(NOT LILYGO_UI_PLATFORM STREQUAL "k230")
+    add_compile_definitions(LV_DEF_REFR_PERIOD=20)
+endif()
 find_package(LilyGoUI CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
@@ -51,6 +53,9 @@ target_link_libraries(lilygo_ui_maps_services PUBLIC
     lilygo_ui_maps_core
     Threads::Threads
     MapsJSON::MapsJSON)
+if(TARGET LilyGoUI::Hardware)
+    target_link_libraries(lilygo_ui_maps_services PUBLIC LilyGoUI::Hardware)
+endif()
 
 add_library(lilygo_ui_maps_ui STATIC
     src/app.cpp
@@ -176,9 +181,18 @@ set(CPACK_DEBIAN_APP_FILE_NAME DEB-DEFAULT)
 set(CPACK_DEBIAN_APP_PACKAGE_DEPENDS
     "libc6, libstdc++6, libdrm2, libfreetype6, libpng16-16t64, zlib1g, libbz2-1.0, libbrotli1, libjson-c5, curl, ca-certificates, lilygo-ui-appkit-dev (>= ${LILYGO_UI_MIN_APPKIT_VERSION})")
 set(CPACK_DEBIAN_APP_PACKAGE_SECTION "utils")
-set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS OFF)
-if(CMAKE_CROSSCOMPILING AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
-    set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE
-        "${LILYGO_UI_PACKAGE_ARCHITECTURE}")
+if(LILYGO_UI_DEBIAN_ARCHITECTURE)
+    set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "${LILYGO_UI_DEBIAN_ARCHITECTURE}")
+elseif(CMAKE_CROSSCOMPILING AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+    set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "arm64")
+endif()
+if("DEB" IN_LIST CPACK_GENERATOR AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    if(NOT COMMAND lilygo_ui_enable_debian_dependencies)
+        message(FATAL_ERROR
+            "Debian packaging requires an AppKit SDK with automatic runtime dependency analysis. "
+            "Update the pinned AppKit or select a compatible SDK with "
+            "-DLilyGoUI_DIR=/path/to/cm0-appkit.")
+    endif()
+    lilygo_ui_enable_debian_dependencies()
 endif()
 include(CPack)

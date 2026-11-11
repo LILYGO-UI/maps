@@ -63,7 +63,7 @@ receiving satellite data alone does not imply a position fix.
 | --- | --- |
 | `LILYGO_MAPS_GNSS_PORT` | Override GNSS serial device |
 | `CELLULAR_PORT` | Serial device when the Maps-specific override is unset |
-| Neither override | `/dev/ttyACM0` |
+| Neither override | AppKit platform default: `/dev/ttyACM0` on CM0, `/dev/ttyS3` on K230 |
 | `LILYGO_MAPS_DISABLE_GNSS=1` | Disable the GNSS reader; use IP only |
 | `LILYGO_MAPS_GNSS_DEBUG=1` | Log sent AT commands and received UART lines to stderr |
 
@@ -80,7 +80,7 @@ close Cellular and other serial tools first, then run:
 LILYGO_MAPS_GNSS_DEBUG=1 lilygo-ui-maps 2>/tmp/maps-gnss.log
 ```
 
-The CM0 default UART is `/dev/ttyACM0`; the K230 reference's `/dev/ttyS3` and GPIO
+The CM0 default UART is `/dev/ttyACM0`; the K230 reference uses `/dev/ttyS3` and GPIO
 setup are specific to that board. The [K230 GNSS manager](https://github.com/Xinyuan-LilyGO/T-Display-K230/blob/12206c8043e7995c3d78eae17c729ee42b70b1bd/k230_launcher/k230_phone_ui/src/ui_nrf9151_manager.c#L2728)
 also tries `AT#XGNSS=1,0,1` (continuous) before `AT#XGNSS=1,0,0,0` (single fix).
 Maps uses that same start sequence, while preserving the configured LTE mode
